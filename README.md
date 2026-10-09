@@ -26,7 +26,7 @@ cp .env.example .env
 php artisan key:generate
 
 # Créer la base MySQL (adapter l'utilisateur si besoin)
-mysql -u root -p -e "CREATE DATABASE glinche_vehicules CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+mysql -u root -p -e "CREATE DATABASE glinche_automobiles CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
 
 # Renseigner DB_* dans backend/.env (voir ci-dessous), puis :
 php artisan migrate
@@ -42,7 +42,7 @@ npm install
 
 | Variable | Rôle |
 |---|---|
-| `DB_CONNECTION`, `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD` | Connexion MySQL (`mysql`, `127.0.0.1`, `3306`, `glinche_vehicules`, …) |
+| `DB_CONNECTION`, `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD` | Connexion MySQL (`mysql`, `127.0.0.1`, `3306`, `glinche_automobiles`, …) |
 | `GLINCHE_EMAIL` / `GLINCHE_PASSWORD` | Identifiants de l'API (fournis dans l'énoncé). Mettre le mot de passe entre guillemets. |
 | `GLINCHE_API_BASE_URL` | URL de base de l'API |
 | `GLINCHE_LOGIN_PATH`, `GLINCHE_VEHICLES_PATH` | Chemins des routes de connexion et des véhicules |
