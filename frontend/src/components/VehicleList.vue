@@ -12,54 +12,28 @@ defineEmits(['retry'])
 </script>
 
 <template>
-  <p v-if="loading" class="state" role="status">Chargement des véhicules…</p>
-
-  <div v-else-if="error" class="state state-error" role="alert">
-    <p>{{ error }}</p>
-    <button type="button" @click="$emit('retry')">Réessayer</button>
+  <div v-if="loading" class="text-center text-secondary py-5" role="status">
+    <div class="spinner-border spinner-border-sm me-2" aria-hidden="true"></div>
+    Chargement des véhicules…
   </div>
 
-  <p v-else-if="vehicles.length === 0" class="state">
+  <div v-else-if="error" class="alert alert-danger text-center" role="alert">
+    <p>{{ error }}</p>
+    <button type="button" class="btn btn-accent" @click="$emit('retry')">Réessayer</button>
+  </div>
+
+  <p v-else-if="vehicles.length === 0" class="text-center text-secondary py-5">
     {{ filtered ? 'Aucun véhicule ne correspond à cette marque.' : 'Aucun véhicule disponible pour le moment.' }}
   </p>
 
-  <ul v-else class="grid">
-    <li v-for="vehicle in vehicles" :key="vehicle.id ?? `${vehicle.brand}-${vehicle.model}-${vehicle.version}`">
+  <!-- 1 colonne sur mobile, 2 sur petite tablette, 3 sur écran moyen, 4 sur grand écran -->
+  <ul v-else class="row row-cols-1 row-cols-sm-2 row-cols-lg-3 row-cols-xl-4 g-4 list-unstyled mb-0">
+    <li
+      v-for="vehicle in vehicles"
+      :key="vehicle.id ?? `${vehicle.brand}-${vehicle.model}-${vehicle.version}`"
+      class="col"
+    >
       <VehicleCard :vehicle="vehicle" />
     </li>
   </ul>
 </template>
-
-<style scoped>
-.grid {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 17rem), 1fr));
-  gap: 1.25rem;
-}
-
-.state {
-  padding: 2rem 1rem;
-  text-align: center;
-  color: var(--muted);
-}
-
-.state-error {
-  color: var(--danger);
-  background: var(--danger-bg);
-  border: 1px solid var(--danger);
-  border-radius: 8px;
-}
-
-button {
-  font: inherit;
-  padding: 0.55rem 1rem;
-  border: 0;
-  border-radius: 6px;
-  background: var(--accent);
-  color: #fff;
-  cursor: pointer;
-}
-</style>

@@ -19,6 +19,10 @@ class GlincheApiService
     private const TOKEN_CACHE_KEY = 'glinche.token';
     private const VEHICLES_CACHE_KEY = 'glinche.vehicles';
 
+    // L'API renvoie des codes : on les traduit en libellés lisibles.
+    private const ENERGY_LABELS = ['ES' => 'Essence', 'GO' => 'Diesel', 'EH' => 'Hybride', 'EL' => 'Électrique'];
+    private const GEARBOX_LABELS = ['AUT' => 'Automatique', 'MAN' => 'Manuelle'];
+
     /**
      * Véhicules normalisés (mis en cache quelques minutes).
      *
@@ -68,14 +72,14 @@ class GlincheApiService
     {
         return [
             'id' => $this->pick($vehicle, ['id', 'uuid', 'reference', 'vehicle_id']),
-            'brand' => $this->text($this->pick($vehicle, ['brand', 'make', 'marque', 'brand_name', 'make_name'])),
-            'model' => $this->text($this->pick($vehicle, ['model', 'modele', 'model_name'])),
-            'version' => $this->text($this->pick($vehicle, ['version', 'trim', 'finition', 'version_name'])),
-            'year' => $this->year($this->pick($vehicle, ['year', 'annee', 'first_registration_date', 'registration_date', 'first_registration'])),
-            'mileage' => $this->number($this->pick($vehicle, ['mileage', 'kilometrage', 'km', 'odometer'])),
-            'energy' => $this->text($this->pick($vehicle, ['energy', 'energie', 'fuel', 'fuel_type'])),
-            'gearbox' => $this->text($this->pick($vehicle, ['gearbox', 'transmission', 'boite', 'boite_de_vitesse'])),
-            'price' => $this->number($this->pick($vehicle, ['price', 'selling_price', 'sale_price', 'price_ttc', 'prix'])),
+            'brand' => $this->text($this->pick($vehicle, ['vehicle.manufacturer', 'brand', 'make', 'marque', 'brand_name', 'make_name'])),
+            'model' => $this->text($this->pick($vehicle, ['vehicle.model', 'model', 'modele', 'model_name'])),
+            'version' => $this->text($this->pick($vehicle, ['vehicle.finish', 'version', 'trim', 'finition', 'version_name'])),
+            'year' => $this->year($this->pick($vehicle, ['vehicle.year', 'vehicle.registrationDate', 'year', 'annee', 'first_registration_date', 'registration_date', 'first_registration'])),
+            'mileage' => $this->number($this->pick($vehicle, ['vehicle.mileage', 'mileage', 'kilometrage', 'km', 'odometer'])),
+            'energy' => $this->label(self::ENERGY_LABELS, $this->text($this->pick($vehicle, ['vehicle.energy', 'energy', 'energie', 'fuel', 'fuel_type']))),
+            'gearbox' => $this->label(self::GEARBOX_LABELS, $this->text($this->pick($vehicle, ['vehicle.gearbox', 'gearbox', 'transmission', 'boite', 'boite_de_vitesse']))),
+            'price' => $this->number($this->pick($vehicle, ['vehicle.prices.merchantPrice', 'price', 'selling_price', 'sale_price', 'price_ttc', 'prix'])),
             'image' => $this->url($this->pick($vehicle, [
                 'photo', 'image', 'picture', 'thumbnail', 'main_image', 'main_photo',
                 'photos', 'images', 'pictures', 'medias', 'media',
@@ -211,6 +215,12 @@ class GlincheApiService
         $value = trim((string) $value);
 
         return $value === '' ? null : $value;
+    }
+
+    /** Libellé correspondant à un code ; un code inconnu est renvoyé tel quel. */
+    private function label(array $labels, ?string $code): ?string
+    {
+        return $code === null ? null : ($labels[strtoupper($code)] ?? $code);
     }
 
     private function number(mixed $value): int|float|null

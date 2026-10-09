@@ -7,21 +7,23 @@ const { vehicles, filteredVehicles, brands, selectedBrand, loading, error, reloa
 </script>
 
 <template>
-  <header class="site-header">
+  <header class="site-header text-white py-3">
     <div class="container">
-      <h1>Véhicules disponibles</h1>
+      <h1 class="h4 m-0">Véhicules disponibles</h1>
     </div>
   </header>
 
-  <main class="container">
-    <div class="toolbar">
-      <BrandFilter
-        v-model="selectedBrand"
-        :brands="brands"
-        :total="vehicles.length"
-        :disabled="loading || !!error"
-      />
-      <p v-if="!loading && !error" class="count" aria-live="polite">
+  <main class="container pb-5">
+    <div class="row align-items-end justify-content-between g-3 py-4">
+      <div class="col-12 col-sm-7 col-md-5 col-lg-4">
+        <BrandFilter
+          v-model="selectedBrand"
+          :brands="brands"
+          :total="vehicles.length"
+          :disabled="loading || !!error"
+        />
+      </div>
+      <p v-if="!loading && !error" class="col-auto m-0 text-secondary" aria-live="polite">
         {{ filteredVehicles.length }} véhicule{{ filteredVehicles.length > 1 ? 's' : '' }}
       </p>
     </div>
@@ -35,30 +37,3 @@ const { vehicles, filteredVehicles, brands, selectedBrand, loading, error, reloa
     />
   </main>
 </template>
-
-<style scoped>
-.site-header {
-  background: var(--ink);
-  color: #fff;
-  padding: 1.25rem 0;
-}
-
-.site-header h1 {
-  margin: 0;
-  font-size: 1.4rem;
-}
-
-.toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: 1.5rem 0;
-}
-
-.count {
-  margin: 0;
-  color: var(--muted);
-}
-</style>
