@@ -9,9 +9,9 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 
 /**
- * Communique avec l'API partenaires Glinche (V1) :
- *  - authentification (token mis en cache, ou Basic)
- *  - récupération des véhicules (avec pagination éventuelle)
+ * Communique avec l'API partenaires Glinche :
+ *  - authentification par token (mis en cache)
+ *  - récupération des véhicules
  *  - normalisation vers un format simple pour le front
  */
 class GlincheApiService
@@ -31,7 +31,7 @@ class GlincheApiService
     public function vehicles(): array
     {
         $load = fn (): array => array_map(
-            fn (array $vehicle): array => $this->normalize($vehicle),
+            fn (array $item): array => $this->normalize($item),
             $this->rawVehicles()
         );
 
@@ -48,42 +48,35 @@ class GlincheApiService
      */
     public function rawVehicles(): array
     {
-        $items = [];
-        $page = 1;
-        $maxPages = max(1, config('glinche.max_pages'));
+        $payload = $this->get(config('glinche.vehicles_path'));
+        $vehicles = $payload['data'] ?? $payload;
 
-        do {
-            $payload = $this->get(config('glinche.vehicles_path'), ['page' => $page]);
-            $items = array_merge($items, $this->extractList($payload));
+        if (! is_array($vehicles) || ! array_is_list($vehicles)) {
+            throw new GlincheApiException('Format de réponse inattendu : liste de véhicules introuvable.');
+        }
 
-            $lastPage = (int) ($this->pick($payload, ['meta.last_page', 'last_page', 'pagination.last_page']) ?? 1);
-            $page++;
-        } while ($page <= $lastPage && $page <= $maxPages);
-
-        return $items;
+        return $vehicles;
     }
 
     /**
      * Transforme un véhicule de l'API en tableau simple et stable.
-     * Chaque champ essaie plusieurs noms possibles : à ajuster une fois la
-     * vraie réponse observée (php artisan glinche:inspect).
+     * L'essentiel des informations se trouve dans le sous-objet "vehicle".
      */
-    public function normalize(array $vehicle): array
+    public function normalize(array $item): array
     {
+        $vehicle = $item['vehicle'] ?? [];
+
         return [
-            'id' => $this->pick($vehicle, ['id', 'uuid', 'reference', 'vehicle_id']),
-            'brand' => $this->text($this->pick($vehicle, ['vehicle.manufacturer', 'brand', 'make', 'marque', 'brand_name', 'make_name'])),
-            'model' => $this->text($this->pick($vehicle, ['vehicle.model', 'model', 'modele', 'model_name'])),
-            'version' => $this->text($this->pick($vehicle, ['vehicle.finish', 'version', 'trim', 'finition', 'version_name'])),
-            'year' => $this->year($this->pick($vehicle, ['vehicle.year', 'vehicle.registrationDate', 'year', 'annee', 'first_registration_date', 'registration_date', 'first_registration'])),
-            'mileage' => $this->number($this->pick($vehicle, ['vehicle.mileage', 'mileage', 'kilometrage', 'km', 'odometer'])),
-            'energy' => $this->label(self::ENERGY_LABELS, $this->text($this->pick($vehicle, ['vehicle.energy', 'energy', 'energie', 'fuel', 'fuel_type']))),
-            'gearbox' => $this->label(self::GEARBOX_LABELS, $this->text($this->pick($vehicle, ['vehicle.gearbox', 'gearbox', 'transmission', 'boite', 'boite_de_vitesse']))),
-            'price' => $this->number($this->pick($vehicle, ['vehicle.prices.merchantPrice', 'price', 'selling_price', 'sale_price', 'price_ttc', 'prix'])),
-            'image' => $this->url($this->pick($vehicle, [
-                'photo', 'image', 'picture', 'thumbnail', 'main_image', 'main_photo',
-                'photos', 'images', 'pictures', 'medias', 'media',
-            ])),
+            'id' => $item['reference'] ?? null,
+            'brand' => $vehicle['manufacturer'] ?? null,
+            'model' => $vehicle['model'] ?? null,
+            'version' => $vehicle['finish'] ?? null,
+            'year' => $vehicle['year'] ?? null,
+            'mileage' => $vehicle['mileage'] ?? null,
+            'energy' => $this->label(self::ENERGY_LABELS, $vehicle['energy'] ?? null),
+            'gearbox' => $this->label(self::GEARBOX_LABELS, $vehicle['gearbox'] ?? null),
+            'price' => $this->price($vehicle['prices']['merchantPrice'] ?? null),
+            'image' => $this->mainPicture($item['pictures'] ?? []),
         ];
     }
 
@@ -91,19 +84,19 @@ class GlincheApiService
     // Appels HTTP
     // ------------------------------------------------------------------
 
-    private function get(string $path, array $query = [], bool $canRetry = true): array
+    private function get(string $path, bool $canRetry = true): array
     {
         try {
-            $response = $this->client()->get($path, $query);
+            $response = $this->baseRequest()->withToken($this->token())->get($path);
         } catch (ConnectionException $e) {
             throw new GlincheApiException("L'API Glinche est injoignable.", 0, $e);
         }
 
         // Token expiré ou révoqué : on en redemande un et on réessaie une seule fois.
-        if ($response->status() === 401 && $canRetry && config('glinche.auth_mode') === 'token') {
+        if ($response->status() === 401 && $canRetry) {
             Cache::forget(self::TOKEN_CACHE_KEY);
 
-            return $this->get($path, $query, false);
+            return $this->get($path, false);
         }
 
         if ($response->failed()) {
@@ -120,24 +113,17 @@ class GlincheApiService
             ->timeout(config('glinche.timeout'));
     }
 
-    private function client(): PendingRequest
-    {
-        $this->assertCredentials();
-
-        if (config('glinche.auth_mode') === 'basic') {
-            return $this->baseRequest()->withBasicAuth(config('glinche.email'), config('glinche.password'));
-        }
-
-        return $this->baseRequest()->withToken($this->token());
-    }
-
     private function token(): string
     {
+        if (! config('glinche.email') || ! config('glinche.password')) {
+            throw new GlincheApiException('Identifiants API manquants : renseignez GLINCHE_EMAIL et GLINCHE_PASSWORD dans le fichier .env.');
+        }
+
         return Cache::remember(self::TOKEN_CACHE_KEY, config('glinche.token_ttl'), function (): string {
             try {
                 $response = $this->baseRequest()->post(config('glinche.login_path'), [
-                    config('glinche.login_email_field') => config('glinche.email'),
-                    config('glinche.login_password_field') => config('glinche.password'),
+                    'email' => config('glinche.email'),
+                    'password' => config('glinche.password'),
                 ]);
             } catch (ConnectionException $e) {
                 throw new GlincheApiException("L'API Glinche est injoignable.", 0, $e);
@@ -147,9 +133,7 @@ class GlincheApiService
                 throw new GlincheApiException("Authentification refusée par l'API Glinche (statut {$response->status()}).");
             }
 
-            $token = $this->pick($response->json() ?? [], [
-                'token', 'access_token', 'plainTextToken', 'data.token', 'data.access_token',
-            ]);
+            $token = $response->json('token');
 
             if (! is_string($token) || $token === '') {
                 throw new GlincheApiException("Aucun token trouvé dans la réponse d'authentification.");
@@ -159,63 +143,9 @@ class GlincheApiService
         });
     }
 
-    private function assertCredentials(): void
-    {
-        if (! config('glinche.email') || ! config('glinche.password')) {
-            throw new GlincheApiException('Identifiants API manquants : renseignez GLINCHE_EMAIL et GLINCHE_PASSWORD dans le fichier .env.');
-        }
-    }
-
     // ------------------------------------------------------------------
-    // Utilitaires de lecture / normalisation
+    // Normalisation
     // ------------------------------------------------------------------
-
-    /** Retrouve la liste de véhicules dans la réponse, quelle que soit son enveloppe. */
-    private function extractList(array $payload): array
-    {
-        if (array_is_list($payload)) {
-            return $payload;
-        }
-
-        foreach (['data', 'vehicles', 'items', 'results', 'data.data', 'data.vehicles'] as $key) {
-            $value = data_get($payload, $key);
-
-            if (is_array($value) && array_is_list($value)) {
-                return $value;
-            }
-        }
-
-        throw new GlincheApiException("Format de réponse inattendu : liste de véhicules introuvable.");
-    }
-
-    /** Premier chemin (notation pointée) qui contient une valeur non vide. */
-    private function pick(array $data, array $keys): mixed
-    {
-        foreach ($keys as $key) {
-            $value = data_get($data, $key);
-
-            if ($value !== null && $value !== '' && $value !== []) {
-                return $value;
-            }
-        }
-
-        return null;
-    }
-
-    private function text(mixed $value): ?string
-    {
-        if (is_array($value)) {
-            $value = $this->pick($value, ['name', 'label', 'title', 'value']);
-        }
-
-        if (! is_scalar($value)) {
-            return null;
-        }
-
-        $value = trim((string) $value);
-
-        return $value === '' ? null : $value;
-    }
 
     /** Libellé correspondant à un code ; un code inconnu est renvoyé tel quel. */
     private function label(array $labels, ?string $code): ?string
@@ -223,46 +153,17 @@ class GlincheApiService
         return $code === null ? null : ($labels[strtoupper($code)] ?? $code);
     }
 
-    private function number(mixed $value): int|float|null
+    /** L'API envoie le prix sous forme de texte ("26700.00"). */
+    private function price(mixed $value): ?float
     {
-        if (is_array($value)) {
-            $value = $this->pick($value, ['amount', 'value', 'total']);
-        }
-
-        if (is_string($value)) {
-            $value = str_replace(',', '.', preg_replace('/[^\d.,]/', '', $value));
-        }
-
-        return is_numeric($value) ? $value + 0 : null;
+        return is_numeric($value) ? (float) $value : null;
     }
 
-    private function year(mixed $value): ?int
+    /** URL de la photo principale (type MAIN), sinon de la première photo. */
+    private function mainPicture(array $pictures): ?string
     {
-        if (is_int($value) || (is_string($value) && preg_match('/\b(19|20)\d{2}\b/', $value, $m))) {
-            return is_int($value) ? $value : (int) $m[0];
-        }
+        $main = collect($pictures)->firstWhere('type', 'MAIN') ?? ($pictures[0] ?? null);
 
-        return null;
-    }
-
-    private function url(mixed $value): ?string
-    {
-        if (is_string($value)) {
-            return $value !== '' ? $value : null;
-        }
-
-        if (is_array($value)) {
-            foreach (['url', 'src', 'path', 'large', 'medium', 'original'] as $key) {
-                if (isset($value[$key])) {
-                    return $this->url($value[$key]);
-                }
-            }
-
-            $first = reset($value);
-
-            return $first === false ? null : $this->url($first);
-        }
-
-        return null;
+        return $main['url'] ?? null;
     }
 }
