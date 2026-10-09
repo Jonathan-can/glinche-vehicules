@@ -1,0 +1,10 @@
+# Secrets : ne jamais versionner
+.env
+.env.*
+!.env.example
+
+# Divers
+.DS_Store
+.idea/
+.vscode/
+*.log
